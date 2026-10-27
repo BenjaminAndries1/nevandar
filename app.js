@@ -248,7 +248,7 @@ async function prefetchNext() {
 function setMedia(it) {
   if (!("mediaSession" in navigator)) return;
   navigator.mediaSession.metadata = new MediaMetadata({ title: `${S.chapter.code} · alinea ${it.nr}`, artist: it.sprekers || "Verteller", album: "Nevandar",
-    artwork: [{ src: "icon-512.png", sizes: "512x512", type: "image/png" }] });
+    artwork: [{ src: "nevandar-512.png", sizes: "512x512", type: "image/png" }] });
   navigator.mediaSession.setActionHandler("play", () => play());
   navigator.mediaSession.setActionHandler("pause", () => audio.pause());
   navigator.mediaSession.setActionHandler("seekbackward", () => { audio.currentTime = Math.max(0, audio.currentTime - 10); });
