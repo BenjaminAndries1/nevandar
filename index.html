@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Nevandar Luisteren</title>
+<meta name="theme-color" content="#0b1011">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700&family=Alegreya+Sans:wght@400;500;700&display=swap">
+<style>
+/* Speler-eerst: bovenaan de opname, daaronder de tekst als manuscript, onderaan drie duimknoppen. */
+:root{
+  --bg:#0b1011; --panel:#121a1b; --panel2:#182224; --ink:#e9e3d4; --muted:#9a9c90; --line:#263233;
+  --gold:#d6ad55; --gold-ink:#16130b; --ok:#6cc391; --redo:#79b4e0; --check:#ea8a70; --quote:#e3c27a;
+  --display:"Alegreya",Georgia,serif; --ui:"Alegreya Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){:root{
+  --bg:#f3efe6; --panel:#fbf8f2; --panel2:#efe9dc; --ink:#20251f; --muted:#6a6f63; --line:#ddd5c4;
+  --gold:#9a7425; --gold-ink:#fffaf0; --ok:#2f7a4c; --redo:#2c5f86; --check:#a0472f; --quote:#6b4d12; color-scheme:light}}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink)}
+body{font:17px/1.5 var(--ui);padding:env(safe-area-inset-top,0px) max(16px,env(safe-area-inset-right,0px)) 0 max(16px,env(safe-area-inset-left,0px))}
+.wrap{max-width:36rem;margin:0 auto;min-height:100%;display:flex;flex-direction:column;gap:14px;padding-top:14px}
+#view{flex:1;display:flex;flex-direction:column;gap:14px}
+header{display:flex;align-items:center;justify-content:space-between;gap:10px}
+h1{font:700 1.35rem/1.15 var(--display);margin:0;letter-spacing:.01em}
+h1 span{color:var(--gold)}
+.sub{color:var(--muted);font-size:.85rem}
+.eyebrow{font-size:.72rem;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:700}
+button,.btn{font:700 1rem var(--ui);border-radius:12px;padding:12px 14px;border:1px solid var(--line);background:var(--panel);color:var(--ink);
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;cursor:pointer;text-decoration:none}
+button:disabled{opacity:.45}
+button:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.primary{background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.link{background:none;border:0;padding:6px 0;min-height:0;color:var(--gold);font-weight:700}
+.iconbtn{background:none;border:0;min-height:40px;padding:6px 8px;color:var(--muted);font-size:1.3rem}
+.notice{border:1px solid var(--line);background:var(--panel);border-radius:12px;padding:12px 14px;font-size:.95rem}
+.notice.bad{border-color:var(--check);color:var(--check)}
+.empty{color:var(--muted);text-align:center;padding:40px 8px}
+[hidden]{display:none!important}
+
+.chapters{display:grid;gap:8px}
+.chap{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:12px;text-align:left;width:100%}
+.chap .code{font:700 1rem var(--display);color:var(--gold);font-variant-numeric:tabular-nums}
+.chap .t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.count{font-variant-numeric:tabular-nums;font-size:.85rem;color:var(--muted);font-weight:700}
+
+.bar{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.progress{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.9rem}
+.meta{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.chip{font-size:.75rem;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.chip.nieuw{color:var(--redo);border-color:currentColor}.chip.gewijzigd{color:var(--check);border-color:currentColor}
+.speakers{font-size:.9rem;color:var(--muted)}
+
+.player{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:12px;display:grid;gap:10px}
+.prow{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center}
+.pp{width:60px;height:60px;border-radius:50%;padding:0;min-height:0;font-size:1.5rem;background:var(--gold);border-color:var(--gold);color:var(--gold-ink)}
+.seek{display:grid;gap:4px}
+input[type=range]{width:100%;accent-color:var(--gold);height:28px;margin:0}
+.times{display:flex;justify-content:space-between;font-size:.8rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.pctl{display:flex;flex-direction:column;gap:4px}
+.small{min-height:34px;padding:4px 10px;font-size:.85rem;font-weight:500}
+.prow2{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.toggle{display:flex;align-items:center;gap:8px;font-size:.9rem;color:var(--muted)}
+.toggle input{width:20px;height:20px;accent-color:var(--gold)}
+
+.text{font:500 1.18rem/1.6 var(--display);margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.text q{quotes:none;color:var(--quote)}
+.actions{position:sticky;bottom:0;margin-top:auto;background:var(--bg);display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;
+  padding:10px 0 calc(10px + env(safe-area-inset-bottom,0px));border-top:1px solid var(--line)}
+.actions button{flex-direction:column;gap:2px;font-size:.92rem;padding:10px 6px;min-height:64px}
+.actions .ic{font-size:1.35rem;line-height:1}
+.a-ok{color:var(--ok)}.a-redo{color:var(--redo)}.a-check{color:var(--check)}
+.notebox{display:grid;gap:8px}
+textarea{font:16px/1.4 var(--ui);color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;min-height:84px;resize:vertical;width:100%}
+.quick{display:flex;flex-wrap:wrap;gap:6px}
+.quick button{min-height:36px;padding:6px 10px;font-size:.85rem;font-weight:500}
+.row{display:flex;gap:8px;flex-wrap:wrap}.row>button{flex:1}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(100px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);
+  border-radius:999px;padding:8px 14px;font-size:.9rem;display:flex;gap:12px;align-items:center;z-index:5;max-width:calc(100% - 32px)}
+.toast button{white-space:nowrap;min-height:0;padding:2px 4px;background:none;border:0;color:var(--gold);font-size:.9rem}
+.menu{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:flex-end;z-index:9}
+.sheet{background:var(--panel);width:100%;max-width:36rem;margin:0 auto;border-radius:18px 18px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom,0px));display:grid;gap:10px}
+.login{display:grid;gap:16px;padding-top:12vh;text-align:center}
+.login .mark{font:700 2.4rem/1 var(--display);color:var(--gold)}
+@media (prefers-reduced-motion:no-preference){.card-in{animation:in .18s ease-out}@keyframes in{from{opacity:.4;transform:translateY(4px)}to{opacity:1;transform:none}}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Nevandar <span>·</span> luisteren</h1>
+    <button class="iconbtn" id="menuBtn" aria-label="Menu">⋯</button>
+  </header>
+  <div id="view"><p class="empty">Laden…</p></div>
+</div>
+<audio id="audio" preload="auto"></audio>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
