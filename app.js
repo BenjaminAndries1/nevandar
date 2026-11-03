@@ -215,14 +215,160 @@ function findingsHtml(it) {
   return `<div class="findings ${esc(q.ernst)}"><span class="eyebrow">Controle: ${q.ernst === "FOUT" ? "fout" : "nakijken"}</span>
     <ul>${q.bevindingen.map(b => `<li><span class="soort">${esc(SOORT[b.soort] || b.soort || "")}</span>${esc(b.tekst)}</li>`).join("")}</ul></div>`;
 }
+// ------------------------------------------------------------------ hoofdstuk doorlopend: het hele hoofdstuk speelt door,
+// per alinea Goed / Opnieuw / Nakijken, en pas als alles een oordeel heeft wordt verwerkt (zelfde werking als de pc)
+const LR = { run: false, code: null, items: [], idx: 0, loaded: null, marks: {}, noteOpen: false };
+audio.addEventListener("ended", () => { if (LR.run) lrAdvance(); });
+const lrJudged = it => { const m = LR.marks[it.id]; return !!((m && m.versie === it.versie) || isDone(it)); };
+const lrMarked = it => { const m = LR.marks[it.id]; return m && m.versie === it.versie ? m : null; };
+function lrLoad(code) {   // bewaarde markeringen; alleen geldig zolang de alinea niet is vervangen (zelfde versie)
+  const raw = ls.get("lr_" + code, {}) || {}, out = {};
+  Object.keys(raw).forEach(id => { const it = LR.items.find(x => x.id === id); if (it && raw[id] && raw[id].versie === it.versie) out[id] = raw[id]; });
+  return out;
+}
+function lrSave() { ls.set("lr_" + LR.code, LR.marks); }
+
 async function openChapter(code) {
   view().innerHTML = `<p class="empty">${esc(code)} laden…</p>`;
   try { const d = await readJson("lijst/" + code + ".json"); S.chapter = { code, titel: d.titel }; S.items = d.items || []; }
   catch (e) { return showError(e, () => openChapter(code)); }
-  const saved = ls.get("pos_" + code, null); S.pos = 0;
-  if (saved) { const k = S.items.findIndex(x => x.id === saved); if (k >= 0) S.pos = k; }
-  S.mode = "chapter"; S.noteOpen = false; nextOpen(0); render(true);
+  S.mode = "lr"; S.noteOpen = false;
+  LR.code = code; LR.items = S.items; LR.marks = lrLoad(code); LR.noteOpen = false; LR.loaded = null; LR.run = false;
+  const saved = ls.get("pos_" + code, null); const k = saved ? S.items.findIndex(x => x.id === saved) : -1;
+  LR.idx = k >= 0 ? k : Math.max(0, S.items.findIndex(x => !lrJudged(x)));
+  chapterScreen();
 }
+function lrPlayCurrent() {
+  const it = LR.items[LR.idx]; if (!it) return;
+  LR.run = true; S.interacted = true; LR.loaded = null; audio.pause(); loadedId = null;
+  const want = LR.idx;
+  linkFor(it).then(url => {
+    if (!LR.run || LR.idx !== want) return;
+    audio.src = url; audio.playbackRate = S.rate; LR.loaded = want; play(); chapterScreen();
+  }).catch(e => { LR.run = false; chapterScreen(); status(errText(e)); });
+  const nx = LR.items[LR.idx + 1]; if (nx) linkFor(nx).catch(() => {});   // volgende alvast klaarzetten
+  chapterScreen();
+}
+function lrAdvance() {   // einde van een alinea: door naar de volgende, tot het einde van het hoofdstuk
+  if (LR.idx + 1 >= LR.items.length) { LR.run = false; chapterScreen(); status("Einde van het hoofdstuk. Controleer je oordelen en verwerk ze."); return; }
+  LR.idx++; lrPlayCurrent();
+}
+function lrToggle() {
+  S.interacted = true;
+  if (LR.loaded === LR.idx && audio.src) { LR.run = true; if (audio.paused) play(); else audio.pause(); syncUi(); return; }
+  lrPlayCurrent();
+}
+function lrJump(d) {
+  const j = LR.idx + d; if (j < 0 || j >= LR.items.length) return;
+  LR.idx = j; LR.noteOpen = false;
+  if (LR.run) lrPlayCurrent(); else chapterScreen();
+}
+function lrMark(keuze, notitie) {
+  const it = LR.items[LR.idx]; if (!it) return;
+  const cur = lrMarked(it);
+  if (!notitie && cur && cur.keuze === keuze) delete LR.marks[it.id];   // zelfde knop nogmaals: wissen
+  else LR.marks[it.id] = { versie: it.versie, keuze, notitie: notitie || "", tijd: new Date().toISOString() };
+  lrSave(); LR.noteOpen = false; chapterScreen();   // het afspelen loopt gewoon door
+  if (LR.run && audio.paused) play();
+}
+function lrNote() {
+  S.interacted = true; LR.noteOpen = true; audio.pause(); chapterScreen();
+  setTimeout(() => { const n = $("#note"); if (n) n.focus(); }, 50);
+}
+function lrSaveNote() {
+  const t = (($("#note") || {}).value || "").trim();
+  if (!t) { toast("Schrijf kort wat er moet gebeuren"); return; }
+  lrMark("nakijken", t);
+}
+function lrCancelNote() { LR.noteOpen = false; chapterScreen(); if (LR.run) play(); }
+async function lrVerwerk() {
+  if (S.busy) return;
+  const open = LR.items.filter(it => !lrJudged(it));
+  if (open.length) { toast(`Nog ${open.length} alinea's zonder oordeel`); return; }
+  const todo = LR.items.filter(it => lrMarked(it));
+  if (!todo.length) { toast("Er is nog niets gemarkeerd"); return; }
+  const n = c => todo.filter(it => LR.marks[it.id].keuze === c).length;
+  if (!window.confirm(`${LR.code}: ${n("goed")} goedkeuren, ${n("opnieuw")} opnieuw genereren, ${n("nakijken")} nakijken. Nu verwerken?`)) return;
+  LR.run = false; audio.pause(); S.busy = true;
+  let ok = 0, fout = 0;
+  try {
+    for (const it of todo) {
+      const m = LR.marks[it.id], t = new Date().toISOString();
+      const path = `${BASE}/keuzes/${it.id.replace(":", "_")}__${it.versie}__${m.keuze}__${t.replace(/[:.]/g, "-")}.json`;
+      try {
+        await dbx("content", "files/upload", { path, mode: "add", autorename: true, mute: true },
+          JSON.stringify({ id: it.id, versie: it.versie, keuze: m.keuze, notitie: m.notitie || "", tijd: t }));
+        S.decided.set(it.id, { versie: it.versie, keuze: m.keuze, path }); delete LR.marks[it.id]; ok++;
+      } catch (e) { fout++; }
+    }
+  } finally { S.busy = false; lrSave(); }
+  if (fout) { toast(`${ok} verwerkt, ${fout} mislukt. Probeer Verwerk opnieuw.`); chapterScreen(); return; }
+  toast(`${ok} keuzes verwerkt`);
+  home();
+}
+function chapterScreen() {
+  const it = LR.items[LR.idx], total = LR.items.length;
+  const judged = LR.items.filter(lrJudged).length, allJudged = judged === total;
+  const m = it && lrMarked(it);
+  const markTxt = !m ? "nog niet beoordeeld" : m.keuze === "goed" ? "goedgekeurd" : m.keuze === "opnieuw" ? "opnieuw genereren" : "nakijken";
+  view().innerHTML = `
+    <div class="card-in" style="display:grid;gap:14px">
+      <div class="bar"><button class="link" id="back">‹ ${esc(S.chapter.code)} · ${esc(S.chapter.titel || "")}</button><span class="progress">${judged} / ${total} beoordeeld</span></div>
+      <div class="meta">
+        <span class="eyebrow">Alinea ${it ? it.nr : ""}</span>
+        <span class="chip ${m ? esc(m.keuze) : ""}">${esc(markTxt)}</span>
+        ${it && it.sprekers ? `<span class="speakers">🗣 ${esc(it.sprekers)}</span>` : ""}
+      </div>
+      <div class="player">
+        <div class="prow">
+          <button class="pp" id="pp" aria-label="Afspelen">▶</button>
+          <div class="seek"><input type="range" id="seek" min="0" max="1000" value="0" aria-label="Positie"><div class="times"><span id="cur">0:00</span><span id="dur">…</span></div></div>
+          <div class="pctl"><button class="small" id="back10" aria-label="10 seconden terug">↺ 10</button><button class="small" id="rate">${S.rate}×</button></div>
+        </div>
+        <div class="prow2"><span class="sub" id="pstat"></span></div>
+      </div>
+      <p class="text">${it ? textHtml(it.tekst) : ""}</p>
+      <div class="notebox" id="notebox" ${LR.noteOpen ? "" : "hidden"}>
+        <span class="eyebrow">Wat moet je nakijken?</span>
+        <div class="quick">${["Uitspraak fout", "Verkeerde spreker", "Verkeerde emotie/tag", "Stem klinkt anders", "Te snel", "Hapering of ruis"].map(q => `<button type="button" data-q="${esc(q)}">${esc(q)}</button>`).join("")}</div>
+        <textarea id="note" placeholder="Bv. ‘Pholer’ klinkt als ‘Fooler’"></textarea>
+        <div class="row"><button id="cancelnote">Annuleren</button><button id="savenote" class="a-check">Bewaar notitie</button></div>
+      </div>
+      <div class="row"><button class="link" id="prev">‹ Vorige</button><button class="link" id="next">Volgende ›</button></div>
+      <button id="verwerk" class="primary" ${allJudged ? "" : "disabled"}>${allJudged ? "Verwerk markeringen" : `Verwerk pas als alles beoordeeld is (nog ${total - judged})`}</button>
+    </div>
+    <div class="actions" ${LR.noteOpen ? "hidden" : ""}>
+      <button id="ok" class="a-ok"><span class="ic">✓</span>Goed</button>
+      <button id="redo" class="a-redo"><span class="ic">↻</span>Opnieuw</button>
+      <button id="chk" class="a-check"><span class="ic">✎</span>Nakijken</button>
+    </div>`;
+  $("#back").onclick = home;
+  $("#pp").onclick = lrToggle;
+  $("#back10").onclick = () => { audio.currentTime = Math.max(0, audio.currentTime - 10); };
+  $("#rate").onclick = () => { const r = [1, 1.25, 1.5, 0.85]; S.rate = r[(r.indexOf(S.rate) + 1) % r.length]; ls.set("rate", S.rate); audio.playbackRate = S.rate; $("#rate").textContent = S.rate + "×"; };
+  $("#seek").oninput = e => { if (audio.duration) audio.currentTime = e.target.value / 1000 * audio.duration; };
+  $("#prev").onclick = () => lrJump(-1);
+  $("#next").onclick = () => lrJump(1);
+  $("#ok").onclick = () => lrMark("goed");
+  $("#redo").onclick = () => lrMark("opnieuw");
+  $("#chk").onclick = lrNote;
+  $("#verwerk").onclick = lrVerwerk;
+  if (LR.noteOpen) {
+    view().querySelectorAll("[data-q]").forEach(b => b.onclick = () => { const t = $("#note"); t.value = (t.value ? t.value.trim() + "; " : "") + b.dataset.q; t.focus(); });
+    $("#cancelnote").onclick = lrCancelNote;
+    $("#savenote").onclick = lrSaveNote;
+  }
+  syncUi();
+}
+// Toetsen op de pc-browser: G goed, O opnieuw, N nakijken, spatie afspelen/pauzeren
+document.addEventListener("keydown", e => {
+  if (S.mode !== "lr" || LR.noteOpen || (e.target && /INPUT|TEXTAREA/.test(e.target.tagName || ""))) return;
+  const k = (e.key || "").toLowerCase();
+  if (k === "g") lrMark("goed");
+  else if (k === "o") lrMark("opnieuw");
+  else if (k === "n") lrNote();
+  else if (e.key === " ") { e.preventDefault(); lrToggle(); }
+});
 function nextOpen(dir) {
   const n = S.items.length; if (!n) return;
   if (dir === 0) { for (let k = 0; k < n; k++) { const j = (S.pos + k) % n; if (!isDone(S.items[j])) { S.pos = j; return; } } return; }
@@ -307,7 +453,7 @@ async function loadAudio(it, autoplay) {
   } catch (e) { status(errText(e)); }
 }
 function play() { audio.playbackRate = S.rate; audio.play().catch(() => status("Tik op ▶ om af te spelen.")); }
-function stopAudio() { audio.pause(); audio.removeAttribute("src"); loadedId = null; }
+function stopAudio() { LR.run = false; LR.loaded = null; audio.pause(); audio.removeAttribute("src"); loadedId = null; }
 function status(t) { const el = $("#pstat"); if (el) el.textContent = t; }
 function syncUi() {
   const pp = $("#pp"); if (!pp) return;
