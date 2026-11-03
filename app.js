@@ -234,8 +234,8 @@ async function openChapter(code) {
   catch (e) { return showError(e, () => openChapter(code)); }
   S.mode = "lr"; S.noteOpen = false;
   LR.code = code; LR.items = S.items; LR.marks = lrLoad(code); LR.noteOpen = false; LR.loaded = null; LR.run = false;
-  const saved = ls.get("pos_" + code, null); const k = saved ? S.items.findIndex(x => x.id === saved) : -1;
-  LR.idx = k >= 0 ? k : Math.max(0, S.items.findIndex(x => !lrJudged(x)));
+  // Altijd beginnen bij de eerste alinea zonder oordeel (een bewaarde positie wordt niet gebruikt)
+  LR.idx = Math.max(0, S.items.findIndex(x => !lrJudged(x)));
   chapterScreen();
 }
 function lrPlayCurrent() {
@@ -314,6 +314,7 @@ function chapterScreen() {
   view().innerHTML = `
     <div class="card-in" style="display:grid;gap:14px">
       <div class="bar"><button class="link" id="back">‹ ${esc(S.chapter.code)} · ${esc(S.chapter.titel || "")}</button><span class="progress">${judged} / ${total} beoordeeld</span></div>
+      <button class="link" id="lrref">↻ Lijst vernieuwen (Dropbox)</button>
       <div class="meta">
         <span class="eyebrow">Alinea ${it ? it.nr : ""}</span>
         <span class="chip ${m ? esc(m.keuze) : ""}">${esc(markTxt)}</span>
@@ -343,6 +344,7 @@ function chapterScreen() {
       <button id="chk" class="a-check"><span class="ic">✎</span>Nakijken</button>
     </div>`;
   $("#back").onclick = home;
+  $("#lrref").onclick = () => { const code = LR.code; stopAudio(); openChapter(code); };
   $("#pp").onclick = lrToggle;
   $("#back10").onclick = () => { audio.currentTime = Math.max(0, audio.currentTime - 10); };
   $("#rate").onclick = () => { const r = [1, 1.25, 1.5, 0.85]; S.rate = r[(r.indexOf(S.rate) + 1) % r.length]; ls.set("rate", S.rate); audio.playbackRate = S.rate; $("#rate").textContent = S.rate + "×"; };
