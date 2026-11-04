@@ -281,6 +281,19 @@ function lrSaveNote() {
   lrMark("nakijken", t);
 }
 function lrCancelNote() { LR.noteOpen = false; chapterScreen(); if (LR.run) play(); }
+// Eigen bevestigingsscherm in plaats van window.confirm(): in een geïnstalleerde PWA (toegevoegd aan
+// het startscherm) geeft confirm()/alert() op sommige telefoons geen zichtbaar venster en levert meteen
+// false op, zodat de knop leek te 'niets doen'. Dit scherm gebruikt gewone DOM-elementen, net als het menu.
+function showConfirm(text, labelYes, onYes) {
+  const m = document.createElement("div"); m.className = "menu";
+  m.innerHTML = `<div class="sheet"><span class="eyebrow">Verwerk markeringen</span>
+    <p>${esc(text)}</p>
+    <div class="row"><button id="cNo">Annuleren</button><button id="cYes" class="primary">${esc(labelYes)}</button></div></div>`;
+  document.body.appendChild(m);
+  m.onclick = e => { if (e.target === m) m.remove(); };
+  $("#cNo", m).onclick = () => m.remove();
+  $("#cYes", m).onclick = () => { m.remove(); onYes(); };
+}
 async function lrVerwerk() {
   if (S.busy) return;
   const open = LR.items.filter(it => !lrJudged(it));
@@ -288,23 +301,24 @@ async function lrVerwerk() {
   const todo = LR.items.filter(it => lrMarked(it));
   if (!todo.length) { toast("Er is nog niets gemarkeerd"); return; }
   const n = c => todo.filter(it => LR.marks[it.id].keuze === c).length;
-  if (!window.confirm(`${LR.code}: ${n("goed")} goedkeuren, ${n("opnieuw")} opnieuw genereren, ${n("nakijken")} nakijken. Nu verwerken?`)) return;
-  LR.run = false; audio.pause(); S.busy = true;
-  let ok = 0, fout = 0;
-  try {
-    for (const it of todo) {
-      const m = LR.marks[it.id], t = new Date().toISOString();
-      const path = `${BASE}/keuzes/${it.id.replace(":", "_")}__${it.versie}__${m.keuze}__${t.replace(/[:.]/g, "-")}.json`;
-      try {
-        await dbx("content", "files/upload", { path, mode: "add", autorename: true, mute: true },
-          JSON.stringify({ id: it.id, versie: it.versie, keuze: m.keuze, notitie: m.notitie || "", tijd: t }));
-        S.decided.set(it.id, { versie: it.versie, keuze: m.keuze, path }); delete LR.marks[it.id]; ok++;
-      } catch (e) { fout++; }
-    }
-  } finally { S.busy = false; lrSave(); }
-  if (fout) { toast(`${ok} verwerkt, ${fout} mislukt. Probeer Verwerk opnieuw.`); chapterScreen(); return; }
-  toast(`${ok} keuzes verwerkt`);
-  home();
+  showConfirm(`${LR.code}: ${n("goed")} goedkeuren, ${n("opnieuw")} opnieuw genereren, ${n("nakijken")} nakijken.`, "Nu verwerken", async () => {
+    LR.run = false; audio.pause(); S.busy = true;
+    let ok = 0, fout = 0;
+    try {
+      for (const it of todo) {
+        const m = LR.marks[it.id], t = new Date().toISOString();
+        const path = `${BASE}/keuzes/${it.id.replace(":", "_")}__${it.versie}__${m.keuze}__${t.replace(/[:.]/g, "-")}.json`;
+        try {
+          await dbx("content", "files/upload", { path, mode: "add", autorename: true, mute: true },
+            JSON.stringify({ id: it.id, versie: it.versie, keuze: m.keuze, notitie: m.notitie || "", tijd: t }));
+          S.decided.set(it.id, { versie: it.versie, keuze: m.keuze, path }); delete LR.marks[it.id]; ok++;
+        } catch (e) { fout++; }
+      }
+    } finally { S.busy = false; lrSave(); }
+    if (fout) { toast(`${ok} verwerkt, ${fout} mislukt. Probeer Verwerk opnieuw.`); chapterScreen(); return; }
+    toast(`${ok} keuzes verwerkt`);
+    home();
+  });
 }
 function chapterScreen() {
   const it = LR.items[LR.idx], total = LR.items.length;
