@@ -304,6 +304,8 @@ async function lrVerwerk() {
   showConfirm(`${LR.code}: ${n("goed")} goedkeuren, ${n("opnieuw")} opnieuw genereren, ${n("nakijken")} nakijken.`, "Nu verwerken", async () => {
     LR.run = false; audio.pause(); S.busy = true;
     let ok = 0, fout = 0;
+    const progress = () => { view().innerHTML = `<p class="empty">Keuzes wegschrijven naar Dropbox: ${ok + fout} / ${todo.length}…</p>`; };
+    progress();
     try {
       for (const it of todo) {
         const m = LR.marks[it.id], t = new Date().toISOString();
@@ -313,6 +315,7 @@ async function lrVerwerk() {
             JSON.stringify({ id: it.id, versie: it.versie, keuze: m.keuze, notitie: m.notitie || "", tijd: t }));
           S.decided.set(it.id, { versie: it.versie, keuze: m.keuze, path }); delete LR.marks[it.id]; ok++;
         } catch (e) { fout++; }
+        progress();
       }
     } finally { S.busy = false; lrSave(); }
     if (fout) { toast(`${ok} verwerkt, ${fout} mislukt. Probeer Verwerk opnieuw.`); chapterScreen(); return; }
